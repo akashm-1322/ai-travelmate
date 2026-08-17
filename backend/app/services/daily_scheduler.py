@@ -30,7 +30,26 @@ AVERAGE_SPEED_KMPH = 25
 # GET VISIT DURATION
 # ============================================================
 
-def get_visit_duration(place: Dict[str, Any]) -> int:
+def get_visit_duration(
+    place: Dict[str, Any]
+) -> int:
+
+    # --------------------------------------------------------
+    # Custom locations can explicitly define their duration.
+    # --------------------------------------------------------
+
+    if place.get("custom_location"):
+
+        custom_duration = place.get(
+            "visit_duration_minutes"
+        )
+
+        if custom_duration is not None:
+
+            return max(
+                0,
+                int(custom_duration)
+            )
 
     category = str(
         place.get("category", "")
@@ -53,7 +72,10 @@ def calculate_travel_time(
     if distance_km <= 0:
         return 0
 
-    hours = distance_km / AVERAGE_SPEED_KMPH
+    hours = (
+        distance_km
+        / AVERAGE_SPEED_KMPH
+    )
 
     minutes = hours * 60
 
@@ -122,6 +144,55 @@ def format_time(
 
 
 # ============================================================
+# GET CUSTOM START TIME
+# ============================================================
+
+def get_custom_start_time(
+    places: List[Dict[str, Any]]
+) -> str | None:
+
+    for place in places:
+
+        if not place.get(
+            "custom_location",
+            False
+        ):
+            continue
+
+        role = str(
+            place.get(
+                "custom_role",
+                ""
+            )
+        ).lower()
+
+        if role != "start":
+            continue
+
+        preferred_time = place.get(
+            "preferred_start_time"
+        )
+
+        if preferred_time:
+
+            try:
+
+                parse_time(
+                    preferred_time
+                )
+
+                return preferred_time
+
+            except ValueError:
+
+                # Invalid custom time.
+                # Ignore it and use normal start time.
+                return None
+
+    return None
+
+
+# ============================================================
 # SCHEDULE ONE DAY
 # ============================================================
 
@@ -130,13 +201,31 @@ def schedule_day(
     start_time: str = "09:00"
 ) -> Dict[str, Any]:
 
+    # --------------------------------------------------------
+    # Determine actual starting time.
+    #
+    # Custom START location gets priority.
+    # Otherwise use supplied start_time.
+    # --------------------------------------------------------
+
+    custom_start_time = (
+        get_custom_start_time(
+            places
+        )
+    )
+
+    actual_start_time = (
+        custom_start_time
+        or start_time
+    )
+
     current_time = parse_time(
-        start_time
+        actual_start_time
     )
 
     scheduled_places = []
 
-    total_distance = 0
+    total_distance = 0.0
 
     for index, place in enumerate(places):
 
@@ -155,9 +244,15 @@ def schedule_day(
         # Travel time
         # ----------------------------------------------------
 
-        travel_minutes = calculate_travel_time(
-            distance
+        travel_minutes = (
+            calculate_travel_time(
+                distance
+            )
         )
+
+        # ----------------------------------------------------
+        # Move to location
+        # ----------------------------------------------------
 
         current_time += timedelta(
             minutes=travel_minutes
@@ -167,9 +262,11 @@ def schedule_day(
         # Opening time
         # ----------------------------------------------------
 
-        opening_time = get_opening_time(
-            place.get(
-                "opening_hours"
+        opening_time = (
+            get_opening_time(
+                place.get(
+                    "opening_hours"
+                )
             )
         )
 
@@ -178,7 +275,7 @@ def schedule_day(
         )
 
         # ----------------------------------------------------
-        # Wait if place hasn't opened
+        # Wait if location hasn't opened
         # ----------------------------------------------------
 
         if current_time < opening_datetime:
@@ -195,8 +292,10 @@ def schedule_day(
         # Visit duration
         # ----------------------------------------------------
 
-        visit_duration = get_visit_duration(
-            place
+        visit_duration = (
+            get_visit_duration(
+                place
+            )
         )
 
         departure_time = (
@@ -248,7 +347,8 @@ def schedule_day(
 
     return {
 
-        "places": scheduled_places,
+        "places":
+            scheduled_places,
 
         "total_distance_km":
             round(
@@ -257,7 +357,7 @@ def schedule_day(
             ),
 
         "start_time":
-            start_time,
+            actual_start_time,
 
         "end_time":
             format_time(
@@ -283,12 +383,14 @@ def schedule_itinerary(
         []
     ):
 
-        scheduled_day_result = schedule_day(
-            day.get(
-                "places",
-                []
-            ),
-            start_time
+        scheduled_day_result = (
+            schedule_day(
+                day.get(
+                    "places",
+                    []
+                ),
+                start_time
+            )
         )
 
         scheduled_days.append({

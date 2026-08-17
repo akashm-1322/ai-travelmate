@@ -43,7 +43,7 @@ def calculate_distance_km(
 
 
 # ============================================================
-# CALCULATE DISTANCE BETWEEN TWO PLACES
+# DISTANCE BETWEEN TWO PLACES
 # ============================================================
 
 def distance_between_places(
@@ -53,12 +53,62 @@ def distance_between_places(
 
     return calculate_distance_km(
 
-        place1["latitude"],
-        place1["longitude"],
+        float(place1["latitude"]),
+        float(place1["longitude"]),
 
-        place2["latitude"],
-        place2["longitude"]
+        float(place2["latitude"]),
+        float(place2["longitude"])
 
+    )
+
+
+# ============================================================
+# FIND SPECIAL CUSTOM LOCATIONS
+# ============================================================
+
+def split_special_locations(
+    places: List[Dict[str, Any]]
+):
+
+    start_location = None
+    end_location = None
+
+    normal_places = []
+
+    for place in places:
+
+        if not place.get(
+            "custom_location",
+            False
+        ):
+
+            normal_places.append(place)
+
+            continue
+
+        role = str(
+            place.get(
+                "custom_role",
+                "waypoint"
+            )
+        ).lower()
+
+        if role == "start":
+
+            start_location = place
+
+        elif role == "end":
+
+            end_location = place
+
+        else:
+
+            normal_places.append(place)
+
+    return (
+        start_location,
+        normal_places,
+        end_location
     )
 
 
@@ -73,17 +123,51 @@ def optimize_day_route(
     if len(places) <= 1:
         return places
 
-    remaining = places.copy()
+    origins = [
+        place
+        for place in places
+        if place.get("origin") is True
+    ]
 
-    optimized = []
+    normal_places = [
+        place
+        for place in places
+        if place.get("origin") is not True
+    ]
 
-    current = remaining.pop(0)
+    # --------------------------------------------------------
+    # If an origin exists, it MUST remain first.
+    # --------------------------------------------------------
 
-    current = current.copy()
+    if origins:
 
-    current["distance_from_previous_km"] = 0.0
+        origin = origins[0].copy()
 
-    optimized.append(current)
+        origin["distance_from_previous_km"] = 0.0
+
+        optimized = [origin]
+
+        remaining = normal_places.copy()
+
+        current = origin
+
+    else:
+
+        remaining = places.copy()
+
+        optimized = []
+
+        current = remaining.pop(0).copy()
+
+        current[
+            "distance_from_previous_km"
+        ] = 0.0
+
+        optimized.append(current)
+
+    # --------------------------------------------------------
+    # Nearest-neighbour optimization
+    # --------------------------------------------------------
 
     while remaining:
 
@@ -120,6 +204,84 @@ def optimize_day_route(
         current = nearest_place
 
     return optimized
+# ============================================================
+# NORMAL ROUTE OPTIMIZATION
+# ============================================================
+
+def optimize_normal_route(
+    places: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+
+    if len(places) <= 1:
+
+        result = [
+            dict(place)
+            for place in places
+        ]
+
+        if result:
+
+            result[0][
+                "distance_from_previous_km"
+            ] = 0.0
+
+        return result
+
+    remaining = [
+        dict(place)
+        for place in places
+    ]
+
+    optimized = []
+
+    current = remaining.pop(0)
+
+    current[
+        "distance_from_previous_km"
+    ] = 0.0
+
+    optimized.append(
+        current
+    )
+
+    while remaining:
+
+        nearest_index = min(
+
+            range(
+                len(remaining)
+            ),
+
+            key=lambda index:
+                distance_between_places(
+                    current,
+                    remaining[index]
+                )
+        )
+
+        nearest_place = remaining.pop(
+            nearest_index
+        )
+
+        distance = (
+            distance_between_places(
+                current,
+                nearest_place
+            )
+        )
+
+        nearest_place[
+            "distance_from_previous_km"
+        ] = distance
+
+        optimized.append(
+            nearest_place
+        )
+
+        current = nearest_place
+
+    return optimized
+
 
 # ============================================================
 # OPTIMIZE COMPLETE ITINERARY
@@ -141,40 +303,79 @@ def optimize_itinerary(
             []
         )
 
-        optimized_places = optimize_day_route(
-            places
+        optimized_places = (
+            optimize_day_route(
+                places
+            )
         )
 
         # ----------------------------------------------------
-        # Calculate total distance for the day
+        # Calculate total distance
         # ----------------------------------------------------
 
         total_distance = 0.0
 
         for place in optimized_places:
 
-            total_distance += place.get(
-                "distance_from_previous_km",
-                0
+            total_distance += float(
+                place.get(
+                    "distance_from_previous_km",
+                    0
+                ) or 0
             )
 
         optimized_days.append({
 
-            "day": day["day"],
+            "day":
+                day.get("day"),
 
-            "places": optimized_places,
+            "places":
+                optimized_places,
 
-            "total_distance_km": round(
-                total_distance,
-                2
-            )
+            "total_distance_km":
+                round(
+                    total_distance,
+                    2
+                )
 
         })
 
     return {
 
-        "city": itinerary["city"],
+        "city":
+            itinerary.get("city"),
 
-        "days": optimized_days
+        "days":
+            optimized_days
 
     }
+
+def add_destination_distance(
+    itinerary: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    for day in itinerary.get("days", []):
+
+        places = day.get("places", [])
+
+        if not places:
+            continue
+
+        destination = places[-1]
+
+        if not destination.get("destination"):
+            continue
+
+        if len(places) < 2:
+            continue
+
+        previous_place = places[-2]
+
+        distance = distance_between_places(
+            previous_place,
+            destination
+        )
+
+        destination["distance_from_previous_km"] = distance
+
+    return itinerary
