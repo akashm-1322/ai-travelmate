@@ -14,7 +14,9 @@ from app.services.route_optimizer import (
     optimize_itinerary,
     add_destination_distance
 )
-
+from app.services.time_constraints import (
+    validate_time_constraints
+)
 from app.services.custom_location import (
     create_custom_location,
     inject_custom_locations
@@ -50,6 +52,8 @@ class CustomLocationRequest(BaseModel):
     role: str = "waypoint"
 
     start_time: Optional[str] = None
+
+    end_time: Optional[str] = None
 
 class OriginRequest(BaseModel):
 
@@ -114,27 +118,29 @@ async def create_itinerary(
 
         custom_location = create_custom_location(
 
-            name=location.name,
+        name=location.name,
 
-            latitude=location.latitude,
+        latitude=location.latitude,
 
-            longitude=location.longitude,
+        longitude=location.longitude,
 
-            category=location.category,
+        category=location.category,
 
-            visit_duration_minutes=(
-                location.visit_duration_minutes
-            ),
+        visit_duration_minutes=(
+         location.visit_duration_minutes
+        ),
 
-            opening_hours=(
-                location.opening_hours
-            ),
+        opening_hours=(
+        location.opening_hours
+        ),
 
-            role=location.role,
+        role=location.role,
 
-            day=location.day,
+        day=location.day,
 
-            start_time=location.start_time,
+        start_time=location.start_time,
+
+        end_time=location.end_time,
         )
 
         custom_locations.append(
@@ -192,7 +198,7 @@ async def create_itinerary(
             first_day["places"].insert(
             0,
             origin
-        )
+            )
 
     # ========================================================
     # 4. OPTIMIZE ROUTES
@@ -228,21 +234,70 @@ async def create_itinerary(
         optimized_itinerary
     )
 
-    # ========================================================
-    # 5. CREATE TIME SCHEDULE
+       # ========================================================
+    # 5. QUALITY IMPROVEMENT
     # ========================================================
 
-    scheduled_itinerary = schedule_itinerary(
+    improved_itinerary = improve_itinerary(
         optimized_itinerary
     )
 
     # ========================================================
-    # 6. QUALITY IMPROVEMENT
+    # 6. CREATE FINAL TIME SCHEDULE
+    # ========================================================
+    #
+    # IMPORTANT:
+    # Quality improvement can change the places in the
+    # itinerary. Therefore scheduling must happen AFTER
+    # quality improvement so arrival/departure times
+    # correspond to the final route.
     # ========================================================
 
-    improved_itinerary = improve_itinerary(
+    scheduled_itinerary = schedule_itinerary(
+        improved_itinerary
+    )
+
+    # ========================================================
+    # 7. FINAL TIME VALIDATION
+    # ========================================================
+
+    time_validation = validate_time_constraints(
         scheduled_itinerary
     )
 
-    return improved_itinerary
+    # ========================================================
+    # 8. FINAL QUALITY VALIDATION
+    # ========================================================
 
+    from app.services.itinerary_quality import (
+        check_itinerary_quality
+    )
+
+    quality_validation = check_itinerary_quality(
+        scheduled_itinerary
+    )
+
+    # ========================================================
+    # 9. FINAL API RESPONSE
+    # ========================================================
+
+    return {
+
+        "city":
+            scheduled_itinerary.get(
+                "city"
+            ),
+
+        "days":
+            scheduled_itinerary.get(
+                "days",
+                []
+            ),
+
+        "time_validation":
+            time_validation,
+
+        "quality_validation":
+            quality_validation
+
+    }

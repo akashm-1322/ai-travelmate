@@ -59,6 +59,15 @@ search_places(city)
 - Prefer information returned by this tool instead of inventing places.
 
 For normal travel planning questions, answer naturally.
+
+LANGUAGE RULES:
+
+- Respond in English by default.
+- If the user's message is clearly in another language,
+  you may reply in that language when appropriate.
+- For voice conversations, if language detection is uncertain,
+  always use English.
+- Never switch languages without a clear reason.
 """
 
 
@@ -350,8 +359,8 @@ CURRENT USER MESSAGE:
             )
 
             print(
-                f"Tool result: "
-                f"{tool_result}"
+            f"Tool completed: {function_call.name} "
+            f"(success={tool_result.get('success', False)})"
             )
 
             # -------------------------------------------------

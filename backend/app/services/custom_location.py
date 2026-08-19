@@ -11,41 +11,70 @@ def create_custom_location(
     longitude: float,
     category: str = "custom_location",
     visit_duration_minutes: int = 0,
-    opening_hours: str | None = None,
+    opening_hours=None,
     role: str = "waypoint",
     day: int = 1,
-    start_time: str | None = None,
+    start_time=None,
+    end_time=None,
 ) -> Dict[str, Any]:
 
-    return {
+    location: Dict[str, Any] = {
         "name": name,
         "category": category,
-        "description": None,
 
         "latitude": float(latitude),
         "longitude": float(longitude),
 
+        "description": None,
         "address": None,
         "opening_hours": opening_hours,
 
-        "map_url": (
-            f"https://www.openstreetmap.org/"
-            f"?mlat={latitude}&mlon={longitude}"
+        "distance_from_previous_km": 0.0,
+
+        "visit_duration_minutes": max(
+            0,
+            int(visit_duration_minutes)
         ),
 
-        "distance_from_previous_km": 0,
-
-        "visit_duration_minutes":
-            max(0, int(visit_duration_minutes)),
-
         "custom_location": True,
-
         "custom_role": role,
 
         "day": int(day),
-
-        "preferred_start_time": start_time,
     }
+
+    # ========================================================
+    # START LOCATION
+    # ========================================================
+
+    if role == "start":
+
+        location["preferred_start_time"] = (
+            start_time or "09:00"
+        )
+
+        location["origin"] = True
+
+    # ========================================================
+    # DESTINATION
+    # ========================================================
+
+    elif role == "destination":
+
+        location["preferred_end_time"] = (
+            end_time
+        )
+
+        location["destination"] = True
+
+    # ========================================================
+    # WAYPOINT
+    # ========================================================
+
+    else:
+
+        location["custom_role"] = "waypoint"
+
+    return location
 
 
 # ============================================================
@@ -60,33 +89,42 @@ def inject_custom_locations(
     if not custom_locations:
         return itinerary
 
-    result = {
+    result: Dict[str, Any] = {
         "city": itinerary.get("city"),
         "days": []
     }
 
-    # --------------------------------------------------------
-    # Copy existing days
-    # --------------------------------------------------------
+    # ========================================================
+    # COPY EXISTING DAYS
+    # ========================================================
 
     for day in itinerary.get("days", []):
 
         result["days"].append({
+
             "day": day.get("day"),
+
             "places": [
                 dict(place)
-                for place in day.get("places", [])
+                for place in day.get(
+                    "places",
+                    []
+                )
             ]
+
         })
 
-    # --------------------------------------------------------
-    # Inject each custom location
-    # --------------------------------------------------------
+    # ========================================================
+    # INJECT CUSTOM LOCATIONS
+    # ========================================================
 
     for location in custom_locations:
 
         target_day = int(
-            location.get("day", 1)
+            location.get(
+                "day",
+                1
+            )
         )
 
         role = str(
@@ -97,7 +135,7 @@ def inject_custom_locations(
         ).lower()
 
         # ----------------------------------------------------
-        # Find requested day
+        # FIND REQUESTED DAY
         # ----------------------------------------------------
 
         target = None
@@ -105,12 +143,12 @@ def inject_custom_locations(
         for day in result["days"]:
 
             if day["day"] == target_day:
+
                 target = day
                 break
 
         # ----------------------------------------------------
-        # If requested day doesn't exist,
-        # create it.
+        # CREATE DAY IF IT DOES NOT EXIST
         # ----------------------------------------------------
 
         if target is None:
@@ -125,7 +163,7 @@ def inject_custom_locations(
             )
 
         # ----------------------------------------------------
-        # START LOCATION
+        # START
         # ----------------------------------------------------
 
         if role == "start":
@@ -136,10 +174,15 @@ def inject_custom_locations(
             )
 
         # ----------------------------------------------------
-        # END LOCATION
+        # DESTINATION
+        #
+        # IMPORTANT:
+        # Use "destination", not "end",
+        # because the scheduling system searches
+        # for custom_role == "destination".
         # ----------------------------------------------------
 
-        elif role == "end":
+        elif role == "destination":
 
             target["places"].append(
                 dict(location)
@@ -155,9 +198,9 @@ def inject_custom_locations(
                 dict(location)
             )
 
-    # --------------------------------------------------------
-    # Keep days ordered
-    # --------------------------------------------------------
+    # ========================================================
+    # KEEP DAYS ORDERED
+    # ========================================================
 
     result["days"].sort(
         key=lambda day: day["day"]
